@@ -1,0 +1,117 @@
+import math
+import numpy as np
+import pandas as pd
+import pandas_datareader as wb
+import matplotlib.pyplot as plt
+import datetime as dt
+import math
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, LSTM
+from tensorflow.keras import Model
+pd.options.mode.chained_assignment = None  # default='warn'
+
+company = 'GS'
+start = dt.datetime(2012,1,1)
+end = dt.datetime(2022,8,3)
+
+data = wb.DataReader(company, 'yahoo', start, end)
+
+#Data clearing
+scaler = MinMaxScaler(feature_range=(0,1))
+scaled_data = scaler.fit_transform(data['Adj Close'].values.reshape(-1,1))
+
+dataset = data.values
+training_data_len = math.ceil( len(dataset)*.8)
+
+train_data = scaled_data[0:training_data_len]
+
+prediction_days = 60
+x_train = []
+y_train = []
+for i in range(60, len(train_data)):
+    x_train.append(train_data[i-60:i,0])
+    y_train.append(train_data[i,0])
+    if i<=60:
+        print(x_train)
+        print(y_train)
+        print()
+x_train, y_train = np.array(x_train), np.array(y_train)
+x_train = np.reshape(x_train, (x_train.shape[0],x_train.shape[1],1))
+
+#______Model________
+
+model = Sequential()
+model.add(LSTM(units=50,return_sequences=True,input_shape=(x_train.shape[1], 1)))
+model.add(LSTM(units=50,return_sequences=False))
+model.add(Dense(25))
+model.add(Dense(1))
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(x_train, y_train, epochs=1, batch_size=1)
+
+#Accuracy Testing
+
+test_start = dt.datetime(2022,1,1)
+test_end = dt.datetime.now()
+
+test_data = wb.DataReader(company, 'yahoo', test_start, test_end )
+actual_prices = test_data['Adj Close'].values
+
+total_dataset = pd.concat((data['Adj Close'], test_data['Adj Close']),axis=0)
+
+model_imputs = total_dataset[len(total_dataset) - len(test_data) - prediction_days:].values
+model_imputs = model_imputs.reshape(-1,1)
+model_imputs = scaler.transform(model_imputs)
+test_data = scaled_data[training_data_len - 60: , :]
+#model_imputs = total_dataset[len(total_dataset) - len(test_data) - prediction_days:].values
+
+#total_dataset.to_csv(r'C:\Users\Ege\Dropbox\WiSo 21-22\Python Work\RNNM\model_imputs.csv')
+
+#Prediction for Test Data
+x_test = []
+y_test = dataset[training_data_len:, :]
+for x in range(60, len(test_data)):
+    x_test.append(test_data[x-60:x,0])
+
+x_test = np.array(x_test)
+x_test = np.reshape(x_test,(x_test.shape[0], x_test.shape[1],1))
+predictions = model.predict(x_test)
+predictions = scaler.inverse_transform(predictions)
+rmse = np.sqrt(np.mean( predictions - y_test)**2)
+print('_____________________________________________________________________________')
+
+print(rmse)
+
+#total_dataset.to_csv(r'C:\Users\Ege\Dropbox\WiSo 21-22\Python Work\RNNM\final.csv')
+
+train = data[:training_data_len]
+valid = data[training_data_len:]
+valid['Predictions'] = predictions
+
+#Plot
+
+
+plt.title(f"{company} Share Price", fontsize=18)
+plt.xlabel('Date')
+plt.ylabel(f"{company} Share Price", fontsize=18)
+plt.legend
+plt.plot(train['Adj Close'], color="black", label=f"Actual  {company} Prices")
+plt.plot(valid[['Adj Close', 'Predictions']], label=f"Predicted {company} Prices")
+plt.legend(['train','Val', 'Predictions'], loc = 'lower right')
+plt.show()
+plt.savefig("C://Users//Ege//Dropbox//WiSo 21-22//Python Work//RNNM//Stock Price Model.pdf", transparent=True )
+#Prediction
+data_pred = wb.DataReader(company, 'yahoo', start, end)
+new_df = data_pred.filter(['Close'])
+last_60_days = new_df [-60:].values
+last_60_days_scaled = scaler.transform(last_60_days)
+
+real_data = [model_imputs[len(model_imputs) + 1 - prediction_days:len(model_imputs+1), 0 ]]
+real_data = np.array(real_data)
+real_data = np.reshape(real_data, (real_data.shape[0], real_data.shape[1],1))
+prediction = model.predict(real_data)
+prediction = scaler.inverse_transform(prediction)
+print(f"Prediction {company} {end}: {prediction}")
+
+company_quote = wb.DataReader(company, data_source='yahoo', start='2022-08-04', end = '2022-08-04')['Adj Close']
+print(company_quote)
